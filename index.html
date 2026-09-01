@@ -13042,9 +13042,8 @@ You are a helpful first step for information, not a replacement for a qualified 
 
     } catch(err){
       hideTyping();
-      // Fallback smart responses when API not available
-      const fallback = getFallbackResponse(text);
-      addMessage('bot', fallback);
+      console.error('Smart Health API Error:', err);
+      addMessage('bot', 'API ERROR: ' + (err.message || 'Unknown error'));
     } finally {
       isTyping = false;
       if(sendBtn) sendBtn.disabled = false;
