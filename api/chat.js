@@ -1,6 +1,4 @@
-export const config = {
-  runtime: "edge",
-};
+export const maxDuration = 60;
 
 export default async function handler(request) {
   if (request.method !== "POST") {
@@ -105,6 +103,7 @@ Never present general information as a medical diagnosis.
 
     if (!geminiResponse.ok || !geminiResponse.body) {
       const errText = await geminiResponse.text().catch(() => "");
+      console.error("Gemini API error:", geminiResponse.status, errText);
       return new Response(
         JSON.stringify({ error: "Gemini was unable to generate a response.", detail: errText }),
         {
@@ -157,8 +156,12 @@ Never present general information as a medical diagnosis.
       },
     });
   } catch (error) {
+    console.error("Chat API error:", error?.message || error);
     return new Response(
-      JSON.stringify({ error: "Something went wrong while connecting to the AI assistant." }),
+      JSON.stringify({
+        error: "Something went wrong while connecting to the AI assistant.",
+        detail: error?.message || String(error),
+      }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
