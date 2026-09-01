@@ -3487,6 +3487,132 @@
 /* Subtle readability bump for main website text only */
 main p, main li, main .feedback-text, main .card-text, main .section-copy, main .page-copy { font-size: calc(1em + 1px); }
 </style>
+
+<style id="final-mobile-navigation-fixes">
+/* Final responsive/navigation fixes — keeps the existing design intact */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  /* Keep internal pages inside the viewport */
+  .internal-page,
+  #page-about,
+  #page-mission,
+  #page-privacy,
+  #page-terms,
+  #page-disclaimer,
+  #page-cookies,
+  #page-contact,
+  #page-tips,
+  #page-dashboard {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* About Us sections: allow content to shrink instead of overflowing */
+  #page-about .ab-hero,
+  #page-about .ab-story-grid,
+  #page-about .ab-wwd-grid,
+  #page-about .ab-source-grid,
+  #page-about .ab-team-grid {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #page-about .ab-hero-text,
+  #page-about .ab-hero-visual,
+  #page-about .ab-story-left,
+  #page-about .ab-story-right,
+  #page-about .ab-wwd-item,
+  #page-about .ab-source-item,
+  #page-about .ab-team-card {
+    min-width: 0;
+  }
+
+  #page-about img,
+  #page-about svg,
+  #page-about canvas {
+    max-width: 100%;
+  }
+
+  /* The embedded team section stays visually the same, but fits narrow screens. */
+  #page-about .sh-meet-wrap,
+  #page-about .sh-meet-wrap .page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  #page-about .sh-meet-wrap .page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #page-about .sh-meet-wrap .team-grid {
+    width: 100%;
+    max-width: 800px;
+    grid-template-columns: 1fr;
+  }
+
+  #page-about .sh-meet-wrap .member-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #page-about .sh-meet-wrap .photo-box {
+    height: min(260px, 65vw);
+  }
+
+  /* Footer columns stay inside the phone viewport. */
+  .sf-nav-wrap {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sf-nav-inner {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .sf-nav-col {
+    min-width: 0;
+  }
+
+  .sf-nav-links a {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .sf-bottom {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  #page-about .ab-team-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #page-about .ab-source-grid,
+  #page-about .ab-story-grid,
+  #page-about .ab-wwd-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sf-nav-inner {
+    grid-template-columns: 1fr !important;
+    gap: 22px;
+  }
+
+  .sf-nav-brand {
+    grid-column: span 1 !important;
+  }
+}
+</style>
 </head>
 <body>
 <div id="smart-cursor" aria-hidden="true">
@@ -6211,8 +6337,8 @@ cards.forEach(card => {
       <div class="sf-nav-col">
         <h4 class="sf-nav-title">Product</h4>
         <ul class="sf-nav-links">
-          <li><a href="#" onclick="document.querySelector('.hero')?.scrollIntoView({behavior:'smooth'});return false;">Home</a></li>
-          <li><a href="#assessment" onclick="document.getElementById('assessment')?.scrollIntoView({behavior:'smooth'});return false;">Symptom Checker</a></li>
+          <li><a href="#home" onclick="footerNavigate('home');return false;">Home</a></li>
+          <li><a href="#assessment" onclick="footerNavigate('assessment');return false;">Symptom Checker</a></li>
           <li><a href="#nearby" onclick="document.getElementById('nearby')?.scrollIntoView({behavior:'smooth'});return false;">Find Healthcare</a></li>
           <li><a href="#" onclick="showPage('page-tips');return false;">Health Tips</a></li>
         </ul>
@@ -10548,6 +10674,22 @@ function destroyVantaPage(pageId){
   }
 }
 
+
+function footerNavigate(target){
+  // Always restore the main site first. This makes footer links work
+  // even when the user is currently viewing an internal page.
+  showPage(null);
+
+  const id = target === 'assessment' ? 'assessment' : 'home';
+  const el = document.getElementById(id);
+
+  if(el){
+    setTimeout(()=>{
+      el.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 60);
+  }
+}
+
 function showPage(pageId){
   // Hide all internal pages
   ALL_PAGES.forEach(id=>{
@@ -12774,33 +12916,51 @@ document.head.appendChild(spinStyle);
   let messages    = []; // conversation history
   const MAX_MSGS  = 20; // keep last 20 for context
 
-  const SYSTEM_PROMPT = `You are Smart Health AI - a knowledgeable, warm, and conversational health assistant. You speak like a trusted friend who happens to know a lot about medicine, not like a chatbot reading from a script.
+  const SYSTEM_PROMPT = `You are Smart Health AI, the conversational assistant inside the Smart Health college project.
 
-HOW YOU RESPOND:
-- Give real, specific, useful answers. If someone says they have a headache, tell them about the types, what helps, what to watch for - don't just say "consult a doctor."
-- Be conversational and natural. Match the user's tone - casual if they're casual, thorough if they ask a detailed question.
-- Keep answers concise but complete. Use short paragraphs. Bullet points only when listing multiple things.
-- NEVER start or end every message with "please see a doctor" or "use the symptom checker." Say it only when it genuinely matters - severe symptoms, emergencies, or when you truly cannot help further.
+Your job is to respond to the user's ACTUAL message and the details they provide. Do not give a generic health paragraph when the user has provided specific information.
 
-WHAT YOU CAN DO:
-- Explain what symptoms typically mean in plain language
-- Suggest safe home care for mild, common conditions
-- Explain when something is likely fine vs when to be concerned
-- Answer questions about medications, dosages, and remedies at a general educational level
-- Discuss nutrition, sleep, stress, mental health, and lifestyle
-- Explain medical terms and conditions clearly
-- Help someone understand a diagnosis they've received from their doctor
+PERSONALIZATION:
+- Pay close attention to the exact symptoms, timing, duration, severity, age-related context when provided, and other details in the conversation.
+- Use earlier messages when they are relevant. Do not ask the user to repeat information they already gave you.
+- If an important detail is genuinely missing, ask one or two short, relevant follow-up questions instead of giving a long list of possibilities.
+- Answer the user's actual question first.
+- If the user is simply asking a general health question, answer that question directly rather than turning it into a symptom-checking session.
 
-WHAT YOU MUST NOT DO:
-- Diagnose a specific condition with certainty
-- Prescribe specific prescription medications
-- Downplay symptoms that sound genuinely dangerous
+TONE:
+- Warm, calm, respectful, and lightly sympathetic.
+- Sound human and reassuring without being dramatic, overly emotional, or patronizing.
+- Match the user's tone naturally while remaining professional.
+- Do not use excessive emojis, exclamation marks, or canned phrases.
+- Keep normal answers concise and useful. Use short paragraphs and bullets only when they improve clarity.
 
-FOR EMERGENCIES ONLY - if someone describes chest pain, difficulty breathing, sudden numbness, signs of stroke, severe bleeding, loss of consciousness, or similar - immediately say: call 1122 (Pakistan emergency) or go to the nearest ER now.
+DO NOT FORCE WEBSITE FEATURES:
+- Do not repeatedly tell users to use the Smart Health symptom checker, healthcare locator, or other website features.
+- Never advertise the website inside every response.
+- Mention a Smart Health feature only when it is genuinely relevant to what the user is asking, and preferably no more than once in a conversation unless the user asks about it.
+- If the user asks a question that can be answered directly, answer it directly.
 
-MENTIONING THE SYMPTOM CHECKER: Only suggest it naturally once per conversation if relevant - like "you could also try the symptom checker on this site for a step-by-step assessment." Never repeat it or make it the main point of your response.
+HEALTH SAFETY:
+- Give general educational health guidance, not a definitive diagnosis.
+- Do not claim certainty about a medical condition from symptoms alone.
+- Do not prescribe prescription medicines or provide unsafe treatment instructions.
+- For potentially urgent symptoms, clearly and calmly recommend prompt professional medical help. If there is an immediate emergency, advise contacting local emergency services or going to the nearest emergency department.
+- Do not downplay concerning symptoms.
+- Do not invent medical facts, test results, diagnoses, or personal information.
+- When discussing medication, stay at a general educational level and avoid pretending to know the user's prescribed dose or medical history.
 
-You are not a replacement for a doctor. But you ARE a smart, helpful first step that gives people real information instead of vague deflections.`;
+DISCLAIMER:
+- Smart Health is general guidance, not a substitute for professional medical diagnosis or treatment.
+- Do not paste the disclaimer into every answer. Mention this limitation naturally when the conversation involves diagnosis, treatment decisions, medication, persistent/worsening symptoms, or other situations where it matters.
+- Do not repeat the same disclaimer mechanically.
+
+CONVERSATION:
+- Remember relevant details from the supplied conversation history.
+- Be specific rather than generic.
+- If the user says something like "it's getting worse" or "the pain moved," connect that statement to what they previously told you.
+- If the user changes the topic, follow the new topic naturally.
+
+You are a helpful first step for information, not a replacement for a qualified healthcare professional.`;
 
   window.toggleChat = function(){
     chatOpen = !chatOpen;
@@ -12853,24 +13013,25 @@ You are not a replacement for a doctor. But you ARE a smart, helpful first step 
     isTyping = true;
 
     try{
-      const response = await fetch('https://api.anthropic.com/v1/messages',{
+      // Send the conversation to our Vercel serverless endpoint.
+      // The Gemini API key NEVER appears in this HTML file.
+      const response = await fetch('/api/chat',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          model:'claude-sonnet-4-6',
-          max_tokens:1000,
-          system: SYSTEM_PROMPT,
-          messages: messages,
+          message: text,
+          history: messages,
+          systemPrompt: SYSTEM_PROMPT
         })
       });
 
       const data = await response.json();
 
-      if(data.error){
-        throw new Error(data.error.message || 'API error');
+      if(!response.ok || data.error){
+        throw new Error(data.error || 'API error');
       }
 
-      const reply = data.content?.[0]?.text || 'Sorry, I could not get a response. Please try again.';
+      const reply = data.reply || 'Sorry, I could not get a response. Please try again.';
 
       // Add assistant reply to history
       messages.push({role:'assistant', content: reply});
