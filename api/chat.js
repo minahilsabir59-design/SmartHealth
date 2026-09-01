@@ -7,9 +7,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages } = req.body || {};
+    const { messages, message, history } = req.body || {};
 
-    if (!Array.isArray(messages) || messages.length === 0) {
+    const conversationMessages =
+      Array.isArray(messages) && messages.length > 0
+        ? messages
+        : [
+            ...(Array.isArray(history) ? history : []),
+            ...(typeof message === "string" && message.trim()
+              ? [{ role: "user", content: message }]
+              : [])
+          ];
+
+    if (
+      !Array.isArray(conversationMessages) ||
+      conversationMessages.length === 0
+    ) {
       return res.status(400).json({
         error: "No conversation messages were provided."
       });
@@ -19,6 +32,7 @@ export default async function handler(req, res) {
 
     if (!apiKey) {
       console.error("GEMINI_API_KEY is missing.");
+
       return res.status(500).json({
         error: "Gemini API key is not configured on the server."
       });
@@ -75,7 +89,7 @@ Tone:
 `;
 
     // Convert the conversation into Gemini's expected format.
-    const contents = messages
+    const contents = conversationMessages
       .filter(
         (message) =>
           message &&
