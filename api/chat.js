@@ -1,16 +1,13 @@
 export const maxDuration = 60;
 
-export default async function handler(request) {
-  if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
   }
 
   try {
-    const body = await request.json().catch(() => ({}));
-    const { messages, message, history } = body || {};
+    const { messages, message, history } = req.body || {};
 
     const conversationMessages =
       Array.isArray(messages) && messages.length > 0
@@ -23,18 +20,15 @@ export default async function handler(request) {
           ];
 
     if (!Array.isArray(conversationMessages) || conversationMessages.length === 0) {
-      return new Response(JSON.stringify({ error: "No conversation messages were provided." }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      res.status(400).json({ error: "No conversation messages were provided." });
+      return;
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Gemini API key is not configured on the server." }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      console.error("GEMINI_API_KEY is missing.");
+      res.status(500).json({ error: "Gemini API key is not configured on the server." });
+      return;
     }
 
     const recentMessages = conversationMessages
@@ -53,10 +47,8 @@ export default async function handler(request) {
     }));
 
     if (contents.length === 0) {
-      return new Response(JSON.stringify({ error: "The conversation is empty." }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      res.status(400).json({ error: "The conversation is empty." });
+      return;
     }
 
     const systemInstruction = `
@@ -82,90 +74,114 @@ Rules:
 Never present general information as a medical diagnosis.
 `;
 
-    const geminiResponse = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 1000,
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let geminiResponse;
+    try {
+      geminiResponse = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
           },
-        }),
-      }
-    );
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents,
+            generationConfig: {
+              temperature: 0.4,
+              maxOutputTokens: 1000,
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      const isAbort = fetchErr?.name === "AbortError";
+      console.error("Gemini fetch failed:", isAbort ? "TIMED OUT after 20s" : fetchErr?.message || fetchErr);
+      res.status(504).json({
+        error: isAbort ? "Gemini did not respond within 20 seconds." : "Could not reach Gemini.",
+        detail: String(fetchErr?.message || fetchErr),
+      });
+      return;
+    }
+    clearTimeout(timeoutId);
 
     if (!geminiResponse.ok || !geminiResponse.body) {
       const errText = await geminiResponse.text().catch(() => "");
       console.error("Gemini API error:", geminiResponse.status, errText);
-      return new Response(
-        JSON.stringify({ error: "Gemini was unable to generate a response.", detail: errText }),
-        {
-          status: geminiResponse.status || 500,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      res.status(geminiResponse.status || 500).json({
+        error: "Gemini was unable to generate a response.",
+        detail: errText,
+      });
+      return;
     }
 
-    const encoder = new TextEncoder();
+    // Stream the reply back as plain text chunks, written directly to
+    // the Node response object as they arrive from Gemini.
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+
+    const reader = geminiResponse.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = "";
+    let sentAny = false;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = geminiResponse.body.getReader();
-        let buffer = "";
+    while (true) {
+      let result;
+      try {
+        result = await Promise.race([
+          reader.read(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("stream stalled")), 20000)),
+        ]);
+      } catch (stallErr) {
+        console.error("Gemini stream stalled mid-response:", stallErr.message);
+        break;
+      }
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+      const { done, value } = result;
+      if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
 
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr || jsonStr === "[DONE]") continue;
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === "[DONE]") continue;
 
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const text =
-                parsed?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-              if (text) controller.enqueue(encoder.encode(text));
-            } catch {
-              // partial JSON chunk, wait for more data
-            }
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const text = parsed?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+          if (text) {
+            res.write(text);
+            sentAny = true;
           }
+        } catch {
+          // partial JSON chunk, wait for more data
         }
+      }
+    }
 
-        controller.close();
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-      },
-    });
+    if (!sentAny) {
+      res.write("Sorry, I could not get a response. Please try again.");
+    }
+    res.end();
   } catch (error) {
     console.error("Chat API error:", error?.message || error);
-    return new Response(
-      JSON.stringify({
+    if (!res.headersSent) {
+      res.status(500).json({
         error: "Something went wrong while connecting to the AI assistant.",
         detail: error?.message || String(error),
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+      });
+    } else {
+      res.end();
+    }
   }
 }
